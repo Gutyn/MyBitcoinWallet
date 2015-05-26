@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/wallet_layout"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical">
+
+    <TextView
+        android:id="@+id/your_address_text"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginLeft="10dp"
+        android:layout_marginTop="10dp"
+        android:text="@string/you_address"
+        android:textAppearance="?android:attr/textAppearanceMedium"
+        android:textColor="@color/gray_text" />
+
+    <TextView
+        android:id="@+id/the_address_text"
+        android:layout_width="160dp"
+        android:layout_height="wrap_content"
+        android:layout_below="@id/your_address_text"
+        android:layout_marginLeft="10dp"
+        android:layout_marginTop="10dp"
+        android:textAppearance="?android:attr/textAppearanceLarge"
+        android:textColor="@color/gray_text"
+        android:textIsSelectable="true"
+        android:textSize="18dp" />
+
+    <Button
+        android:id="@+id/button"
+        android:layout_width="fill_parent"
+        android:layout_height="wrap_content"
+        android:layout_below="@id/the_address_text"
+        android:layout_gravity="center_horizontal"
+        android:layout_marginTop="60dp"
+        android:clickable="false"
+        android:text="@string/balance"
+        android:textColor="@color/white_text"
+        android:textSize="24dp" />
+
+    <ImageView
+
+        android:id="@+id/bitcoin_logo"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_below="@id/button"
+        android:layout_marginLeft="10dp"
+        android:layout_marginTop="10dp"
+        android:background="@drawable/bitcoin_logo" />
+
+    <TextView
+        android:id="@+id/the_balance"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_below="@id/button"
+        android:layout_marginLeft="100dp"
+        android:layout_marginTop="20dp"
+        android:textAppearance="?android:attr/textAppearanceLarge"
+        android:textSize="30dp" />
+
+    <ProgressBar
+        android:id="@+id/wallet_progressBar"
+        style="?android:attr/progressBarStyleLarge"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_alignTop="@+id/bitcoin_logo"
+        android:layout_centerHorizontal="true"
+        android:indeterminate="false" />
+
+</RelativeLayout>
