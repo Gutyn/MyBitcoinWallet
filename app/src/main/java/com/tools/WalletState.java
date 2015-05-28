@@ -5,44 +5,18 @@ import android.app.backup.BackupManager;
 import android.os.AsyncTask;
 import android.util.Log;
 
-import com.google.bitcoin.core.Address;
-import com.google.bitcoin.core.BlockChain;
-import com.google.bitcoin.core.BlockStore;
-import com.google.bitcoin.core.BlockStoreException;
-import com.google.bitcoin.core.BoundedOverheadBlockStore;
-import com.google.bitcoin.core.DnsDiscovery;
-import com.google.bitcoin.core.ECKey;
-import com.google.bitcoin.core.IrcDiscovery;
-import com.google.bitcoin.core.NetworkConnection;
-import com.google.bitcoin.core.NetworkParameters;
-import com.google.bitcoin.core.Peer;
-import com.google.bitcoin.core.PeerDiscovery;
-import com.google.bitcoin.core.PeerDiscoveryException;
-import com.google.bitcoin.core.Utils;
-import com.google.bitcoin.core.Wallet;
 import com.mybitcoinwallet.WalletActivity;
 import com.mybitcoinwallet.adapter.MyPagerAdapter;
 import com.mybitcoinwallet.fragment.WalletFragment;
 import com.mybitcoinwallet.listeners.WalletListener;
 
-import org.apache.commons.io.IOUtils;
+import org.bitcoinj.core.NetworkParameters;
+import org.bitcoinj.core.Transaction;
+import org.bitcoinj.kits.WalletAppKit;
+import org.bitcoinj.params.MainNetParams;
+import org.bitcoinj.params.TestNet3Params;
 
 import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.ObjectInputStream;
-import java.io.ObjectOutputStream;
-import java.net.InetSocketAddress;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.concurrent.Callable;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
 
 /**
  * Created by Mihail on 5/23/15.
@@ -50,34 +24,35 @@ import java.util.concurrent.TimeUnit;
 public class WalletState {
     public static final String TAG = "WalletState";
     private boolean TEST_MODE = true;
-    private String filePrefix = TEST_MODE ? "testnet" : "prodnet";
+    private String filePrefix = TEST_MODE ? "testwallet" : "prodwallet";
     private NetworkParameters network =
-            TEST_MODE ? NetworkParameters.testNet() : NetworkParameters.prodNet();
-    private Wallet wallet;
-    boolean walletShouldBeRebuilt = false;
-    private Address address;
+            TEST_MODE ? TestNet3Params.get() : MainNetParams.get();
     static final Object[] walletFileLock = new Object[0];
     private MyPagerAdapter pagerAdapter;
     private static WalletState walletState;
-    private File keychainFile;
-    private BlockStore blockStore = null;
-    private BlockChain blockChain;
     static final Object[] connectedPeersLock = new Object[0];
-    private ArrayList<Peer> connectedPeers = new ArrayList<Peer>();
     private BackupManager backupManager;
-    private File walletFile;
     private WalletFragment walletFragment;
-    private int remaining;
-    private ArrayList<InetSocketAddress> isas = new ArrayList<InetSocketAddress>();
-    private PeerDiscovery peerDiscovery;
+    private WalletAppKit kit;
+    private String address;
     private Application app;
+    private WalletListener walletListener;
+    private String testPass;
 
     private WalletState() {
         app = WalletActivity.getMainActivity().getApplication();
     }
 
     public void initiate() {
+
+        Log.d(TAG, "Synchronizing the kit");
+        File file = new File(app.getFilesDir().getAbsolutePath());
+        Log.d(TAG, "The file is : " + file);
+        kit = new WalletAppKit(network, file, filePrefix);
+        kit.startAsync();
         new BackgroundTask().execute();
+//        new BackgroundTask2().execute();
+        Log.d(TAG, "Running done!");
     }
 
     public static WalletState getInstantce() {
@@ -87,37 +62,13 @@ public class WalletState {
         return walletState;
     }
 
-    public Wallet getWallet(NetworkParameters netParams) {
+    public void receiveMoney(Transaction tx) {
         try {
-            wallet = Wallet.loadFromFile(walletFile);
-            Log.d(TAG, "Found wallet file to load");
+            kit.wallet().commitTx(tx);
+            System.out.println(tx);
         } catch (Exception e) {
             e.printStackTrace();
-            wallet = new Wallet(netParams);
-            Log.d(TAG, "Created new wallet...now attempting to reset prior keys");
-
-            //load any previous keys in case this IOException was due to a serialization change of a previous wallet
-            try {
-                ObjectInputStream ois = new ObjectInputStream(new FileInputStream(keychainFile));
-                @SuppressWarnings("unchecked")
-                ArrayList<ECKey> keys = (ArrayList<ECKey>) ois.readObject();
-                for (ECKey key : keys) {
-                    wallet.keychain.add(key);
-                }
-                walletShouldBeRebuilt = true;
-            } catch (Exception e2) {
-                Log.d(TAG, "No prior keys found, a brand new wallet!");
-                ECKey k = new ECKey();
-                Log.d(TAG, "Added a new key: " + k);
-                wallet.keychain.add(k);
-            }
-            saveWallet();
-        } catch (StackOverflowError e) {
-            //couldn't deserialize the wallet - maybe it was saved in a previous version of bitcoinj
-            e.printStackTrace();
         }
-
-        return wallet;
     }
 
     public class BackgroundTask extends AsyncTask {
@@ -127,222 +78,56 @@ public class WalletState {
         protected Object doInBackground(Object[] params) {
             Log.d(TAG, "Starting doInBackground");
             try {
-                Log.d(TAG, "Started");
-                keychainFile = new File(app.getFilesDir(), filePrefix + ".keychain");
-                walletFile = new File(app.getFilesDir(), filePrefix + ".wallet");
-                wallet = getWallet(network);
-                wallet.addEventListener(new WalletListener());
-                if (TEST_MODE) {
-                    peerDiscovery = new IrcDiscovery("#bitcoin");
-                    Log.i(TAG, "peerDiscovery: " + peerDiscovery);
-                } else {
-                    peerDiscovery = new DnsDiscovery(network);
-                }
-                Log.d(TAG, "Reading block store from disk");
-                try {
-                    File file = new File(app.getExternalFilesDir(null), filePrefix
-                            + ".blockchain");
-                    if (!file.exists()) {
-                        Log.d(TAG, "Copying initial blockchain from assets folder");
-                        InputStream is = null;
-                        try {
-                            is = app.getAssets().open(
-                                    filePrefix + ".blockchain");
-                            IOUtils.copy(is, new FileOutputStream(file));
-                        } catch (IOException e) {
-                            Log.d(TAG,
-                                    "Couldn't find initial blockchain in assets folder...starting from scratch");
-                        } finally {
-                            if (is != null) {
-                                try {
-                                    is.close();
-                                } catch (IOException e) {
-                                    e.printStackTrace();
-                                }
-                            }
-                        }
-                    }
+                kit.awaitRunning();
+                walletListener = new WalletListener();
+                kit.wallet().addEventListener(walletListener);
 
-                    blockStore = new BoundedOverheadBlockStore(network, file);
-                    blockChain = new BlockChain(network, wallet, blockStore);
-                    downloadBlockChain();
-                    connectToLocalPeers();
-                    Log.d(TAG, "Ending background task");
-                    return true;
-                } catch (BlockStoreException bse) {
-                    throw new Error("Couldn't store block.");
-                }
+                Log.d(TAG, "Done synchronizing the kit");
             } catch (Exception e) {
-
+                e.printStackTrace();
+                Log.e(TAG, "Error synchronizing the kit");
             }
             return null;
         }
 
         @Override
         protected void onPostExecute(Object o) {
-            ECKey key = wallet.keychain.get(0);
-            address = key.toAddress(network);
+            Log.i(TAG, "The wallet: " + kit.wallet());
+            address = kit.wallet().freshReceiveAddress().toString();
             Log.i(TAG, "onPostExecute! finally and the Key is: " + address);
             pagerAdapter = WalletActivity.getMainActivity().getPagerAdapter();
             walletFragment = pagerAdapter.getWalletFragment();
-            walletFragment.setBalanceText(Utils.bitcoinValueToFriendlyString
-                    (wallet.getBalance(Wallet.BalanceType.ESTIMATED)));
+            walletFragment.setBalanceText(kit.wallet().getBalance().toFriendlyString());
             walletFragment.setmTextView(address.toString());
             walletFragment.setWallet_progressBar_visibility();
 
         }
+    }
 
-        private void downloadBlockChain() {
-            Log.d(TAG, "Downloading block chain");
+    public class BackgroundTask2 extends AsyncTask {
+        public static final String TAG = "BackgroundTask";
 
-            remaining = 0;
-            boolean done = false;
-            while (!done) {
-                ArrayList<InetSocketAddress> isas = discoverPeers();
-                if (isas.size() == 0) {
-                    // not connected to internet
-                    done = true;
-                } else {
-                    for (InetSocketAddress isa : isas) {
-                        if (blockChainDownloadSuccessful(isa)) {
-                            done = true;
-                            break;
-                        } else {
-                            // remove and try next one
-                            removeBadPeer(isa);
-                        }
-                    }
-                }
-            }
-
+        @Override
+        protected Object doInBackground(Object[] params) {
+            Log.d(TAG, "Starting doInBackground2");
+            return null;
         }
 
-        private boolean blockChainDownloadSuccessful(InetSocketAddress isa) {
-            NetworkConnection conn = createNetworkConnection(isa);
-            if (conn == null)
-                return false;
-
-            Peer peer = new Peer(network, conn, blockChain);
-            peer.start();
-            try {
-                Log.d(TAG, "Starting download from new peer");
-                peer.startBlockChainDownload();
-                Log.d(TAG, "Download from new peer done");
-            } catch (IOException e) {
-                Log.d(TAG, "IOException in blockChainDownloadSuccessful");
-                e.printStackTrace();
-            } finally {
-                // always calls this even if we return above
-                peer.disconnect();
-            }
-
-            return true;
-        }
-
-        private NetworkConnection createNetworkConnection(final InetSocketAddress isa) {
-            ExecutorService executor = Executors.newCachedThreadPool();
-            Callable<NetworkConnection> task = new Callable<NetworkConnection>() {
-                public NetworkConnection call() {
-                    NetworkConnection conn = null;
-                    try {
-                        conn = new NetworkConnection(isa.getAddress(), network,
-                                blockStore.getChainHead().getHeight(), 8000);
-                        Log.e(TAG, " after conn assignment");
-                    } catch (Exception e) {
-                    }
-                    return conn;
-                }
-            };
-            Future<NetworkConnection> future = executor.submit(task);
-            NetworkConnection result = null;
-            try {
-                result = future.get(10, TimeUnit.SECONDS);
-            } catch (Exception e) {
-                e.printStackTrace();
-            } finally {
-                future.cancel(true);
-            }
-            return result;
-        }
-
-        /* connect to local peers (minimum of 3, maximum of 8) */
-        private synchronized void connectToLocalPeers() {
-            Log.d(TAG, "Connecting to local peers");
-            synchronized (connectedPeersLock) {
-                // clear out any which have disconnected
-                if (connectedPeers.size() < 3) {
-                    for (InetSocketAddress isa : discoverPeers()) {
-                        NetworkConnection conn = createNetworkConnection(isa);
-                        if (conn == null) {
-                            removeBadPeer(isa);
-                            Log.d(TAG, "removed peer");
-                        } else {
-                            Peer peer = new Peer(network, conn, blockChain);
-                            peer.start();
-                            connectedPeers.add(peer);
-                            if (connectedPeers.size() >= 8)
-                                break;
-                        }
-                    }
-                }
-            }
+        @Override
+        protected void onPostExecute(Object o) {
+            Log.i(TAG, "The wallet: " + kit.wallet());
+            address = kit.wallet().freshReceiveAddress().toString();
+            Log.i(TAG, "onPostExecute! finally and the Key is: " + address);
+            pagerAdapter = WalletActivity.getMainActivity().getPagerAdapter();
+            walletFragment = pagerAdapter.getWalletFragment();
+            walletFragment.setBalanceText(kit.wallet().getBalance().toFriendlyString());
+            walletFragment.setmTextView(address.toString());
+            walletFragment.setWallet_progressBar_visibility();
         }
 
     }
 
-    public Wallet getReadyWallet() {
-        if (wallet != null) {
-            Log.i(TAG, "The ready wallet was returned");
-            return wallet;
-        }
-        return getWallet(network);
+    public WalletAppKit getKit() {
+        return kit;
     }
-
-    public void saveWallet() {
-        synchronized (WalletState.walletFileLock) {
-            Log.d(TAG, "Saving wallet");
-            try {
-                wallet.saveToFile(walletFile);
-            } catch (IOException e) {
-                throw new Error("Can't save wallet file.");
-            }
-
-            // save keys also in case we need to rebuild wallet later (serialization changes)
-            ObjectOutputStream keychain;
-            try {
-                keychain = new ObjectOutputStream(new FileOutputStream(keychainFile));
-                keychain.writeObject(wallet.keychain);
-                keychain.flush();
-                keychain.close();
-            } catch (IOException e) {
-                e.printStackTrace();
-                throw new Error("Can't save keychain file.");
-            }
-        }
-        Log.d(TAG, "Notifying BackupManager that data has changed. Should backup soon.");
-        backupManager.dataChanged();
-    }
-
-    public synchronized void removeBadPeer(InetSocketAddress isa) {
-        Log.d(TAG, "removing bad peer");
-        isas.remove(isa);
-    }
-
-    @SuppressWarnings("unchecked")
-    public ArrayList<InetSocketAddress> discoverPeers() {
-        if (isas.size() == 0) {
-            Log.i(TAG, "Discovering peers...");
-            try {
-                isas.addAll(Arrays.asList(peerDiscovery.getPeers()));
-                Collections.shuffle(isas); // try different order each time
-            } catch (PeerDiscoveryException e) {
-                Log.d(TAG, "Couldn't discover peers.", e);
-                e.printStackTrace();
-            }
-        }
-        Log.d(TAG, "discoverPeers returning " + isas.size() + " peers");
-        // shallow clone to prevent concurrent modification exceptions
-        return (ArrayList<InetSocketAddress>) isas.clone();
-    }
-
 }

@@ -89,15 +89,11 @@
     </content>
     <orderEntry type="jdk" jdkName="Android API 20 Platform" jdkType="Android SDK" />
     <orderEntry type="sourceFolder" forTests="false" />
-    <orderEntry type="library" exported="" name="commons-io-2.0.1" level="project" />
     <orderEntry type="library" exported="" name="pagerslidingtabstrip-1.0.1" level="project" />
     <orderEntry type="library" exported="" name="appcompat-v7-20.0.0" level="project" />
-    <orderEntry type="library" exported="" name="bitcoinj-20110607" level="project" />
-    <orderEntry type="library" exported="" name="junit-4.8.2" level="project" />
     <orderEntry type="library" exported="" name="core" level="project" />
-    <orderEntry type="library" exported="" name="slf4j-simple-1.6.1" level="project" />
     <orderEntry type="library" exported="" name="support-annotations-20.0.0" level="project" />
     <orderEntry type="library" exported="" name="support-v4-20.0.0" level="project" />
-    <orderEntry type="library" exported="" name="slf4j-api-1.6.1" level="project" />
+    <orderEntry type="library" exported="" name="bitcoinj-core-0.12.3-bundled" level="project" />
   </component>
 </module>
