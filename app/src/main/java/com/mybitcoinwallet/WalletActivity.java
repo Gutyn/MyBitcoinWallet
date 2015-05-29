@@ -3,13 +3,13 @@ package com.mybitcoinwallet;
 import android.os.Bundle;
 import android.support.v4.app.FragmentActivity;
 import android.support.v4.view.ViewPager;
-import android.util.Log;
 import android.view.Menu;
 import android.view.MenuItem;
-import android.view.View;
+import android.widget.Toast;
 
 import com.astuetz.PagerSlidingTabStrip;
 import com.mybitcoinwallet.adapter.MyPagerAdapter;
+import com.tasks.UpdateWalletTask;
 import com.tools.WalletState;
 
 /**
@@ -34,7 +34,7 @@ public class WalletActivity extends FragmentActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_my_wallet);
 
-        walletState = WalletState.getInstantce();
+        walletState = WalletState.getInstance();
 
         ViewPager viewPager = (ViewPager) findViewById(R.id.pager);
         pagerAdapter = new MyPagerAdapter(getSupportFragmentManager());
@@ -63,6 +63,8 @@ public class WalletActivity extends FragmentActivity {
 
         //noinspection SimplifiableIfStatement
         if (id == R.id.refresh_menu_item) {
+            new UpdateWalletTask().execute();
+            Toast.makeText(this, "Wallet refreshed!", Toast.LENGTH_SHORT).show();
             return true;
         }
 
@@ -73,11 +75,5 @@ public class WalletActivity extends FragmentActivity {
         return pagerAdapter;
     }
 
-    public void sendCoins(View view) {
-        if (pagerAdapter.getSendFragment().getAmount() > 0) {
-            Log.d(TAG, "SendCoins worked! ");
-        }
-        Log.d(TAG, "Insert the amount! ");
-    }
 
 }
